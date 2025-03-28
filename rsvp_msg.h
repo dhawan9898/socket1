@@ -26,8 +26,8 @@ struct rsvp_header {
     uint8_t ttl;
     uint8_t reserved;
     uint16_t length;
-//    struct in_addr sender_ip;
-//    struct in_addr receiver_ip;
+    //    struct in_addr sender_ip;
+    //    struct in_addr receiver_ip;
 };
 
 // common class Object
@@ -139,3 +139,4 @@ void get_path_class_obj(int[]);
 
 extern int get_nexthop(const char *, const char *);
 extern void get_ip(char[], char *, char *); 
+extern int get_tunnel_id(char[]); 
