@@ -4,4 +4,4 @@
 
 #define RSVP_PROTOCOL 46  // RSVP IP Protocol Number
 
-//extern int get_nexthop(const char *, const char *);
+//extern int get_nexthop(const char *, const char *nh_ip);

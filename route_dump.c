@@ -10,8 +10,8 @@
 #include <sys/socket.h>
 #include <linux/rtnetlink.h>
 
-static char dest_ip[16], src_ip[16];
-static char nh[16];
+static char dest_ip[16], nh[16];
+char src_ip[16];
 
 // Function to check if an IP is in a subnet
 int is_ip_in_subnet(const char *ip, const char *subnet, int prefix_len) {
@@ -26,7 +26,7 @@ int is_ip_in_subnet(const char *ip, const char *subnet, int prefix_len) {
 
     // default route
     if(!(subnet_addr.s_addr & mask.s_addr))
-        return 1;
+        return 2;
 
     // Perform bitwise AND
     if ((ip_addr.s_addr & mask.s_addr) == (subnet_addr.s_addr & mask.s_addr)) {
@@ -35,7 +35,7 @@ int is_ip_in_subnet(const char *ip, const char *subnet, int prefix_len) {
     return 0; // IP is not in the subnet
 }
 
-int rtnl_receive(int fd, struct msghdr *msg, int flags)
+/*int rtnl_receive(int fd, struct msghdr *msg, int flags)
 {
     int len;
 
@@ -54,7 +54,7 @@ int rtnl_receive(int fd, struct msghdr *msg, int flags)
     }
 
     return len;
-}
+}*/
 
 static int rtnl_recvmsg(int fd, struct msghdr *msg, char **answer)
 {
@@ -65,7 +65,7 @@ static int rtnl_recvmsg(int fd, struct msghdr *msg, char **answer)
     iov->iov_base = NULL;
     iov->iov_len = 0;
 
-    len = rtnl_receive(fd, msg, MSG_PEEK | MSG_TRUNC);
+    len = recv(fd, NULL, 0, MSG_PEEK | MSG_TRUNC);
 
     if (len < 0) {
         return len;
@@ -81,7 +81,7 @@ static int rtnl_recvmsg(int fd, struct msghdr *msg, char **answer)
     iov->iov_base = buf;
     iov->iov_len = len;
 
-    len = rtnl_receive(fd, msg, 0);
+    len = recv(fd, buf, len, 0);
 
     if (len < 0) {
         free(buf);
@@ -127,16 +127,16 @@ int print_route(struct nlmsghdr* nl_header_answer)
     char route[16], *dev;
     int prefix_len = 0;
 
-    strcpy(route, " ");
-    strcpy(nh, " ");
-    strcpy(src_ip, " ");
-
     len -= NLMSG_LENGTH(sizeof(*r));
 
     if (len < 0) {
         perror("Wrong message length");
-        return 0; 
+        return 0;
     }
+
+    strcpy((char*)route, " ");
+    strcpy(nh, " ");
+    strcpy(src_ip, " ");
 
     parse_rtattr(tb, RTA_MAX, RTM_RTA(r), len);
 
@@ -156,8 +156,8 @@ int print_route(struct nlmsghdr* nl_header_answer)
 
         inet_ntop(r->rtm_family, RTA_DATA(tb[RTA_DST]), buf, sizeof(buf));
         strcpy(route, buf);
-        prefix_len = r->rtm_dst_len;
-        printf("route = %s %d \n", route,prefix_len);
+        prefix_len = r->rtm_dst_len;	
+        //printf("route = %s %d\n", route,prefix_len);
         //printf("%s/%u ", inet_ntop(r->rtm_family, RTA_DATA(tb[RTA_DST]), buf, sizeof(buf)), r->rtm_dst_len);
 
     } else if (r->rtm_dst_len) {
@@ -165,6 +165,7 @@ int print_route(struct nlmsghdr* nl_header_answer)
     } else {
         //printf("default ");
         strcpy(route, "0.0.0.0");
+        //route = "0.0.0.0";
     }
 
     if (tb[RTA_GATEWAY]) {
@@ -184,25 +185,25 @@ int print_route(struct nlmsghdr* nl_header_answer)
     }
 
     if (tb[RTA_SRC]) {
-        inet_ntop(r->rtm_family, RTA_DATA(tb[RTA_SRC]), buf, sizeof(buf));
-        //strcpy(src_ip, buf);
+        //inet_ntop(r->rtm_family, RTA_DATA(tb[RTA_SRC]), buf, sizeof(buf));
+        //strcpy(src, buf);
 
-        //printf("\n src -- %s\n", src_ip);
+        //printf("\n src -- %s\n", src);
         //printf("src %s", inet_ntop(r->rtm_family, RTA_DATA(tb[RTA_SRC]), buf, sizeof(buf)));
     }
 
     if (tb[RTA_PREFSRC]) {
         inet_ntop(r->rtm_family, RTA_DATA(tb[RTA_PREFSRC]), buf, sizeof(buf));
         strcpy(src_ip, buf);
-        //	printf("src %s\n", inet_ntop(r->rtm_family, RTA_DATA(tb[RTA_PREFSRC]), buf, sizeof(buf)));
+        //printf("src_ip = %s\n",src_ip);	
+        //printf("src %s\n", inet_ntop(r->rtm_family, RTA_DATA(tb[RTA_PREFSRC]), buf, sizeof(buf)));
     }
 
-    if(is_ip_in_subnet(dest_ip, route, prefix_len)) {
+    if(is_ip_in_subnet(dest_ip, route, prefix_len) == 1) {
         printf("next hop for destination ip %s is -> %s\n", dest_ip, nh);
-        printf("\n next hop --- %s\n", nh);
         return 1;
     } else {
-        //printf("------ dest ip not found\n");
+        return 0;
     }
 
     //printf("\n");
@@ -269,7 +270,7 @@ int get_route_dump_response(int sock)
     struct nlmsghdr *h = (struct nlmsghdr *)buf;
     int msglen = status;
 
-    printf("Main routing table IPv4\n");
+    //printf("Main routing table IPv4\n");
 
     while (NLMSG_OK(h, msglen)) {
         if (h->nlmsg_flags & NLM_F_DUMP_INTR) {
@@ -278,17 +279,19 @@ int get_route_dump_response(int sock)
             return -1;
         }
 
-        if (nladdr.nl_pid != 0) {
-            continue;
-        }
+        //if (nladdr.nl_pid != 0) {
+        //    continue;
+        //}
 
         if (h->nlmsg_type == NLMSG_ERROR) {
             perror("netlink reported error");
             free(buf);
         }
 
-        if(print_route(h))
+        if(print_route(h)) { 
             return 1;
+        }
+
 
         h = NLMSG_NEXT(h, msglen);
     }
@@ -302,6 +305,7 @@ int get_nexthop(const char *dst_ip, char *nh_ip)
 {
 
     int temp = 0;
+
     strcpy(dest_ip, dst_ip);
     int nl_sock = open_netlink();
 
